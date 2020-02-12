@@ -8,7 +8,11 @@ edition = "2018"
 
 [dependencies]
 tokio-binance = "0.3.0"
+futures = "0.3.4"
 serde_json = "1.0"
 rust_decimal = "1.2.1"
 chrono = "0.4.10"
 tokio = { version = "0.2", features = ["full"] }
+tokio-postgres = { version = "0.5.2", features = ["with-chrono-0_4"] }
+log = "0.4.8"
+simple_logger = "1.5.0"
