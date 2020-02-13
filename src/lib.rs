@@ -10,9 +10,15 @@ use futures::{future, stream::StreamExt, join};
 use tokio_binance::*;
 use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
+use log::{error};
 
-pub type Kline = (DateTime<Utc>, Decimal, Decimal);
-type Indicator = Option<(DateTime<Utc>, Decimal)>;
+pub type Kline = (DateTime<Utc>, Decimal, Decimal, &'static str);
+type Indicator = Option<(DateTime<Utc>, Decimal, &'static str)>;
+
+pub struct OrderState {
+    pub prev_macd: Option<Decimal>,
+    pub confirm_count: usize
+}
 
 struct State {
     prev_ema: Option<Decimal>,
@@ -39,7 +45,7 @@ pub async fn klines<S: Into<String>, U: Into<String>>(
         .as_array_mut()
         .unwrap()
         .iter_mut()
-        .map(|v| (v[0].take(), v[1].take(), v[4].take()))
+        .map(|v| (v[0].take(), v[1].take(), v[4].take(), "old"))
         .collect();
 
     let historic_stream = stream::iter(klines);
@@ -63,22 +69,22 @@ pub async fn klines<S: Into<String>, U: Into<String>>(
                         let t = value["data"]["k"]["t"].take();
                         let o = value["data"]["k"]["o"].take();
                         let c = value["data"]["k"]["c"].take();
-                        if let Err(_) = tx.send((t, o, c)).await {
-                            eprint!("kline receiver dropped");
+                        if let Err(_) = tx.send((t, o, c, "new")).await {
+                            error!("kline receiver dropped");
                             return;
                         }
                     }
                 }
                 Ok(None) => break,
                 Err(e) => {
-                    eprintln!("{}", e);
+                    error!("{}", e);
                     return;
                 }
             };
         }
     });
 
-    let chained_stream = historic_stream.chain(rx).map(|(t, o, c)| {
+    let chained_stream = historic_stream.chain(rx).map(|(t, o, c, s)| {
         (
             DateTime::<Utc>::from_utc(
                 NaiveDateTime::from_timestamp(t.as_i64().unwrap() / 1000, 0),
@@ -86,6 +92,7 @@ pub async fn klines<S: Into<String>, U: Into<String>>(
             ),
             o.as_str().unwrap().parse::<Decimal>().unwrap(),
             c.as_str().unwrap().parse::<Decimal>().unwrap(),
+            s
         )
     });
 
@@ -109,12 +116,12 @@ pub async fn ema<S: Stream<Item = Kline> + Unpin + Send>(
         count: 0,
     };
 
-    let ema = klines.scan(state, move |state, (t, _, c)| {
+    let ema = klines.scan(state, move |state, (t, _, c, s)| {
         if state.count == window_size - 1 {
             if let Some(ema) = state.prev_ema {
                 let ema = c * k + ema * (const1 - k);
                 state.prev_ema = Some(ema);
-                future::ready(Some(Some((t, ema))))
+                future::ready(Some(Some((t, ema, s))))
             } else {
                 state.window.push(c);
                 let sma = state.window.iter().map(|x| *x).sum::<Decimal>() / dwindow_size;
@@ -160,15 +167,15 @@ pub async fn rsi<S: Into<String>, U: Into<String>>(
 
         while let (Some(gains), Some(losses)) = join!(gains.next(), losses.next()) {
 
-            if let (Some((_, gains)), Some((time, losses))) = (gains, losses) {
+            if let (Some((_, gains, _)), Some((time, losses, s))) = (gains, losses) {
                 let rsi = const1 - (const1 / (const2 + (gains / losses)));
-                if let Err(_) = tx.send(Some((time, rsi))).await {
-                    eprintln!("rsi receiver dropped");
+                if let Err(_) = tx.send(Some((time, rsi, s))).await {
+                    error!("rsi receiver dropped");
                     return;
                 }
             } else {
                 if let Err(_) = tx.send(None).await {
-                    eprintln!("rsi receiver dropped");
+                    error!("rsi receiver dropped");
                     return;
                 }
             }
@@ -198,15 +205,15 @@ pub async fn macd<S: Into<String>, U: Into<String>>(
     tokio::spawn(async move {
         while let (Some(ema12), Some(ema26)) = join!(ema12.next(), ema26.next()) {
             
-            if let (Some((_, ema12)), Some((time, ema26))) = (ema12, ema26) {
+            if let (Some((_, ema12, _)), Some((time, ema26, s))) = (ema12, ema26) {
                 let macd = ema12 - ema26;
-                if let Err(_) = tx.send(Some((time, macd))).await {
-                    eprintln!("macd receiver dropped");
+                if let Err(_) = tx.send(Some((time, macd, s))).await {
+                    error!("macd receiver dropped");
                     return;
                 }
             } else {
                 if let Err(_) = tx.send(None).await {
-                    eprintln!("macd receiver dropped");
+                    error!("macd receiver dropped");
                     return;
                 } 
             }
