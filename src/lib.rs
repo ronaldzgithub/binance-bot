@@ -8,9 +8,8 @@ use tokio::{
 use futures::{future, stream::StreamExt, join};
 
 use tokio_binance::*;
-use rust_decimal::prelude::*;
 use rust_decimal::Decimal;
-use log::{error};
+use log::error;
 
 pub type Kline = (DateTime<Utc>, Decimal, Decimal, &'static str);
 type Indicator = Option<(DateTime<Utc>, Decimal, &'static str)>;
@@ -149,16 +148,16 @@ pub async fn rsi<S: Into<String>, U: Into<String>>(
     let api_key: String = api_key.into();
     
     let size: usize = 14;
-    let const1 = Decimal::zero();
+    let zero = Decimal::new(1, 10);
 
     let (mut tx, rx) = mpsc::channel(100);
 
     let candles = klines(symbol.clone(), interval, api_key.clone()).await?;
-    let gains = candles.map(move |mut x|if (x.2 - x.1).is_sign_positive() {x} else {x.2 = const1; x});
+    let gains = candles.map(move |mut x|if (x.2 - x.1).is_sign_positive() {x} else {x.2 = zero; x});
     let mut gains = ema(gains, size).await?;
 
     let candles = klines(symbol, interval, api_key).await?;
-    let losses = candles.map(move |mut x|if (x.2 - x.1).is_sign_negative() {x} else {x.2 = const1; x});
+    let losses = candles.map(move |mut x|if (x.2 - x.1).is_sign_negative() {x} else {x.2 = zero; x});
     let mut losses = ema(losses, size).await?;
 
     tokio::spawn(async move {
@@ -166,7 +165,6 @@ pub async fn rsi<S: Into<String>, U: Into<String>>(
         let const2: Decimal = 1.into();
 
         while let (Some(gains), Some(losses)) = join!(gains.next(), losses.next()) {
-
             if let (Some((_, gains, _)), Some((time, losses, s))) = (gains, losses) {
                 let rsi = const1 - (const1 / (const2 + (gains / losses)));
                 if let Err(_) = tx.send(Some((time, rsi, s))).await {
