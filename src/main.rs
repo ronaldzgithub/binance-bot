@@ -78,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             panic!()
         }
     } else {
-        error!("Invalid Symbol. Base and quote assets are concatinated. e.g. BNBUSDT");
+        error!("Invalid symbol. Base and quote assets are concatinated. e.g. BNBUSDT");
         panic!()
     }
 
