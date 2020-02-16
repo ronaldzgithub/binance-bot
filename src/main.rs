@@ -244,8 +244,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
                     if notional > min_notional {
                         let size = balance.to_f64().unwrap();
+                        let dp = 10.0f64.powi(lot_size);
+                        let size = (dp * size).floor() / dp;
+                        
                         let bid = bid.to_f64().unwrap();
-    
                         let response = client
                             .place_limit_order(symbol, Side::Sell, bid, size, true)
                             .with_time_in_force(TimeInForce::Ioc)
