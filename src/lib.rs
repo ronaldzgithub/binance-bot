@@ -25,6 +25,73 @@ struct State {
     count: usize,
 }
 
+pub fn validator(x: String) -> Result<(), String> {
+    if let Ok(x) = x.parse::<u32>() {
+        if x <= 100 {
+            Ok(())
+        } else {
+            Err(String::from("value has to be between 0-100"))
+        }
+    } else {
+        Err(String::from("value has to be between 0-100"))
+    }
+}
+
+pub fn process_info<'a>(symbol: &str, info: &'a Value) -> (i32, Decimal, &'a str, &'a str) {
+    let symbol = info["symbols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["symbol"] == symbol)
+        .last()
+        .unwrap();
+
+    let min_notional_filter = symbol["filters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["filterType"] == "MIN_NOTIONAL")
+        .last()
+        .unwrap();
+
+    let lot_size_filter = symbol["filters"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["filterType"] == "LOT_SIZE")
+        .last()
+        .unwrap();
+
+    let min_notional = min_notional_filter["minNotional"]
+        .as_str()
+        .unwrap()
+        .parse::<Decimal>()
+        .unwrap();
+
+    let lot_size = lot_size_filter["minQty"]
+        .as_str()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+
+    let lot_size = (lot_size.log10() / 10.00f64.log10()).abs() as i32;
+    let base_asset = symbol["baseAsset"].as_str().unwrap();
+    let quote_asset = symbol["quoteAsset"].as_str().unwrap();
+
+    (lot_size, min_notional, base_asset, quote_asset)
+}
+
+pub fn symbol_exist(symbol: &str, info: &Value) -> bool {
+    let filter: Vec<_> = info["symbols"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["symbol"] == symbol)
+        .collect();
+
+    !filter.is_empty()
+}
+
 pub async fn klines<S: Into<String>, U: Into<String>>(
     symbol: S,
     interval: Interval,
